@@ -1,0 +1,18 @@
+# Ortama özel ve gizli dosyalar
+.env
+
+# macOS
+.DS_Store
+
+# Yerel IDE
+.idea/
+.vscode/
+
+# Çalışma zamanı dosyaları (klasörler .gitkeep ile korunur)
+storage/logs/*
+storage/cache/data/*
+storage/cache/views/*
+!storage/**/.gitkeep
+
+# SQLite veritabanı dosyası
+database/*.sqlite

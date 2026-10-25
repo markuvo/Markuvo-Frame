@@ -7,6 +7,9 @@ use Core\Database\Grammar;
 /** Blueprint'i sürücüye (mysql / pgsql / sqlite) uygun DDL cümlelerine çevirir. */
 class SchemaGrammar
 {
+    /** MySQL/MariaDB için: sütun adı -> mevcut tanım ("varchar(255) NOT NULL ..."); renameColumn için gerekir. */
+    public array $columnDefinitions = [];
+
     public function __construct(protected string $driver)
     {
     }
@@ -68,6 +71,15 @@ class SchemaGrammar
             $sql[] = "ALTER TABLE {$table} ADD COLUMN " . $this->columnSql($col);
         }
         foreach ($t->renameColumns as $from => $to) {
+            if ($this->driver === 'mysql') {
+                // RENAME COLUMN yalnızca MySQL 8+ / MariaDB 10.5.2+ ile gelir; CHANGE her sürümde çalışır
+                // ama sütunun tanımını yeniden ister. Tanım mevcut tablodan okunup aynen korunur.
+                if (!isset($this->columnDefinitions[$from])) {
+                    throw new \LogicException("'{$from}' sütununun tanımı okunamadı (renameColumn).");
+                }
+                $sql[] = "ALTER TABLE {$table} CHANGE " . $this->w($from) . ' ' . $this->w($to) . ' ' . $this->columnDefinitions[$from];
+                continue;
+            }
             $sql[] = "ALTER TABLE {$table} RENAME COLUMN " . $this->w($from) . ' TO ' . $this->w($to);
         }
         foreach ($t->dropIndexes as $name) {

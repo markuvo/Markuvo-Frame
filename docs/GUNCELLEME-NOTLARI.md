@@ -66,8 +66,8 @@ Ayrıca **gizli dosyaları da** commit'leyin: `.gitignore`, `.htaccess`, `public
 
 - **Test edildi:** 155 test (SQLite gerçek veritabanı; PostgreSQL 16 gerçek sunucuda entegrasyon; Redis gerçek sunucuda; `php -S` ile gerçek HTTP akışı: giriş, CSRF, çıkış, 404, yetki).
 - **Test edilemedi:** Apache `.htaccess` kuralları (ortamda Apache yoktu) ve **gerçek MySQL/MariaDB sunucusu** — yalnızca üretilen SQL metinleri test edildi. XAMPP'inizde şunu çalıştırın:
-  `TEST_DB=mysql DB_DATABASE=markuvo_test DB_USERNAME=root php tests/runner.php Real`
-  (boş bir test veritabanı kullanın; `mk_` önekli tabloları oluşturup siler).
+  `.env` içine `TEST_DB=mysql` ve `TEST_DB_DATABASE=markuvo_test` yazıp `php markuvo test Real` çalıştırın
+  (boş bir test veritabanı kullanın; asıl DB_DATABASE ile aynıysa test kendini durdurur).
 - Testler PHPUnit uyumlu yazıldı; paket indirilemediği için küçük bir dahili çalıştırıcıyla (`tests/runner.php`) koştu. PHPUnit kurarsanız (`composer require --dev phpunit/phpunit`) aynı testler `vendor/bin/phpunit` ile de çalışır — bunu denemedim.
 - Önbelleğe nesne koymayın; yalnızca skaler/dizi (güvenlik için nesneler geri yüklenmez).
 

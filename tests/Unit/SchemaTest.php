@@ -57,6 +57,19 @@ class SchemaTest extends TestCase
         $this->assertStringContainsString('"aktif" INTEGER NOT NULL DEFAULT 1', $sql[0]);
     }
 
+    public function testMysqlRenameColumnUsesChangeWithExistingDefinition(): void
+    {
+        $blueprint = new Blueprint('t');
+        $blueprint->renameColumn('eski', 'yeni');
+        $grammar = new \Core\Database\Schema\SchemaGrammar('mysql');
+        $grammar->columnDefinitions = ['eski' => 'varchar(255) DEFAULT NULL'];
+
+        $this->assertSame(['ALTER TABLE `t` CHANGE `eski` `yeni` varchar(255) DEFAULT NULL'], $grammar->compileAlter($blueprint));
+
+        $pg = (new \Core\Database\Schema\SchemaGrammar('pgsql'))->compileAlter($blueprint);
+        $this->assertSame(['ALTER TABLE "t" RENAME COLUMN "eski" TO "yeni"'], $pg);
+    }
+
     public function testDefaultStringsAreEscaped(): void
     {
         $sql = Schema::toSql('mysql', fn(Blueprint $t) => $t->string('durum')->default("o'neil"));

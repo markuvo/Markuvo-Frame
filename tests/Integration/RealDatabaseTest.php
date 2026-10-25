@@ -182,8 +182,8 @@ class RealDatabaseTest extends TestCase
 
         try {
             DB::transaction(function () {
-                DB::table('mk_kayitlar')->insert(['ad' => 'a', 'puan' => 1]);
-                DB::table('mk_kayitlar')->insert(['ad' => 'a', 'puan' => 2]);   // benzersizlik ihlali
+                DB::table('mk_kayitlar')->insert(['ad' => 'gizli-deger-77', 'puan' => 1]);
+                DB::table('mk_kayitlar')->insert(['ad' => 'gizli-deger-77', 'puan' => 2]);   // benzersizlik ihlali
             });
             $this->fail('istisna bekleniyordu');
         } catch (\Throwable $e) {
@@ -192,7 +192,10 @@ class RealDatabaseTest extends TestCase
 
         $this->assertSame(0, DB::table('mk_kayitlar')->count(), 'transaction geri alınmalı');
         $log = file_get_contents($this->storage . '/logs/db_errors.log');
-        $this->assertStringNotContainsString("'a'", $log);
+        $this->assertStringContainsString('mk_kayitlar', $log);
+        $this->assertStringNotContainsString('gizli-deger-77', $log, 'değer sürücü mesajından da sızmamalı');
+        $appLog = $this->storage . '/logs/app.log';
+        $this->assertStringNotContainsString('gizli-deger-77', is_file($appLog) ? file_get_contents($appLog) : '');
     }
 
     public function testForeignKeysAndCascade(): void

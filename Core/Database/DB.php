@@ -189,7 +189,7 @@ class DB
 
             return $statement;
         } catch (PDOException $e) {
-            self::report($e->getMessage() . ' | SQL: ' . $sql);
+            self::report(QueryException::redact($e->getMessage()) . ' | SQL: ' . $sql);
             throw new QueryException($sql, $e);
         }
     }

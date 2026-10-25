@@ -39,7 +39,32 @@ class Schema
         $blueprint = new Blueprint($table);
         $callback($blueprint);
 
-        self::run((new SchemaGrammar(DB::driver()))->compileAlter($blueprint));
+        $grammar = new SchemaGrammar(DB::driver());
+        if (DB::driver() === 'mysql' && $blueprint->renameColumns !== []) {
+            $grammar->columnDefinitions = self::mysqlColumnDefinitions($table, array_keys($blueprint->renameColumns));
+        }
+
+        self::run($grammar->compileAlter($blueprint));
+    }
+
+    /** SHOW CREATE TABLE çıktısından istenen sütunların tanım kısmını ("`ad` " sonrası) çıkarır. */
+    protected static function mysqlColumnDefinitions(string $table, array $columns): array
+    {
+        $row = DB::select('SHOW CREATE TABLE ' . Grammar::wrap($table, 'mysql'))[0] ?? null;
+        $ddl = $row ? (string) (((array) $row)['Create Table'] ?? '') : '';
+        $found = [];
+
+        foreach (preg_split('/\R/', $ddl) as $line) {
+            $line = trim($line);
+            foreach ($columns as $column) {
+                $prefix = '`' . str_replace('`', '``', $column) . '` ';
+                if (str_starts_with($line, $prefix)) {
+                    $found[$column] = rtrim(substr($line, strlen($prefix)), ',');
+                }
+            }
+        }
+
+        return $found;
     }
 
     public static function drop(string $table): void

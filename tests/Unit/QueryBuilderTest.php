@@ -341,4 +341,11 @@ class QueryBuilderTest extends TestCase
     {
         $this->assertSame('sqlite', DB::driver());
     }
+
+    public function testDriverErrorMessagesDoNotLeakValues(): void
+    {
+        $this->assertStringNotContainsString('gizli@x.com', \Core\Database\QueryException::redact("Duplicate entry 'gizli@x.com' for key 'users.email'"));
+        $this->assertStringNotContainsString('gizli@x.com', \Core\Database\QueryException::redact("DETAIL:  Key (email)=(gizli@x.com) already exists."));
+        $this->assertStringNotContainsString('abc-gizli', \Core\Database\QueryException::redact('invalid input syntax for type integer: "abc-gizli"'));
+    }
 }
