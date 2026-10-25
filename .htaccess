@@ -1,0 +1,12 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # 🚨 GÜVENLİK: .env, .git veya .htaccess dosyalarına direkt erişimi yasakla
+    RedirectMatch 403 /\.(env|git|htaccess)
+
+    # Gelen tüm istekleri doğrudan public klasörünün içindeki index.php'ye gizlice yönlendirir
+    RewriteBase /dashboard/markuvo-framework/
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+
+</IfModule>

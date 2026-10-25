@@ -1,0 +1,31 @@
+{
+    "name": "markuvo/framework",
+    "description": "Markuvo Framework Core",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "ext-pdo": "*",
+        "ext-mbstring": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Core\\": "Core/",
+            "App\\": "app/",
+            "Database\\Seeders\\": "database/seeders/"
+        },
+        "files": [
+            "Core/System/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "php tests/runner.php"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

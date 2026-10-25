@@ -1,0 +1,422 @@
+#!/usr/bin/env php
+<?php
+
+if (PHP_SAPI !== 'cli') {
+    exit('Bu dosya yalnızca komut satırından çalıştırılır.');
+}
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+use Core\Application;
+use Core\Database\Migrator;
+use Core\Database\Schema;
+use Core\System\Router;
+
+/*
+|--------------------------------------------------------------------------
+| Argümanlar:  php markuvo <komut> [argüman] [--secenek=deger] [--bayrak]
+|--------------------------------------------------------------------------
+*/
+$argv = $_SERVER['argv'] ?? [];
+array_shift($argv);
+
+$command = 'help';
+$positional = [];
+$options = [];
+
+foreach ($argv as $arg) {
+    if (str_starts_with($arg, '--')) {
+        $pair = explode('=', substr($arg, 2), 2);
+        $options[$pair[0]] = $pair[1] ?? true;
+    } elseif ($command === 'help' && $positional === [] && !isset($commandSet)) {
+        $command = $arg;
+        $commandSet = true;
+    } else {
+        $positional[] = $arg;
+    }
+}
+$argument = $positional[0] ?? null;
+
+/*
+|--------------------------------------------------------------------------
+| Renkler
+|--------------------------------------------------------------------------
+*/
+$RESET  = "\033[0m";
+$RED    = "\033[31m";
+$GREEN  = "\033[32m";
+$YELLOW = "\033[33m";
+$BLUE   = "\033[34m";
+$CYAN   = "\033[36m";
+$ORANGE = "\033[38;5;202m";
+$GRAY   = "\033[90m";
+$WHITE  = "\033[97m";
+$BOLD   = "\033[1m";
+
+function line($char = '─', $length = 58) { echo str_repeat($char, $length) . PHP_EOL; }
+function success($message) { global $GREEN, $RESET; echo "{$GREEN}✓ {$message}{$RESET}" . PHP_EOL; }
+function errorMessage($message) { global $RED, $RESET; echo "{$RED}✗ {$message}{$RESET}" . PHP_EOL; }
+function warning($message) { global $YELLOW, $RESET; echo "{$YELLOW}! {$message}{$RESET}" . PHP_EOL; }
+function info($message) { global $CYAN, $RESET; echo "{$CYAN}› {$message}{$RESET}" . PHP_EOL; }
+
+/** Uygulamayı konsol modunda başlatır (.env + config yüklenir, veritabanı ilk sorguda bağlanır). */
+function bootApp(): Application
+{
+    static $app = null;
+
+    return $app ??= Application::boot(__DIR__, ['console' => true]);
+}
+
+/** Dosya/sınıf adı güvenliği: yalnızca harf, rakam, alt çizgi ve (alt klasör için) eğik çizgi. */
+function safeName(?string $name, string $what): string
+{
+    if (!$name) {
+        errorMessage("{$what} adı belirtmelisiniz.");
+        exit(1);
+    }
+    if (!preg_match('#^[A-Za-z][A-Za-z0-9_]*(/[A-Za-z][A-Za-z0-9_]*)*$#', $name)) {
+        errorMessage("Geçersiz {$what} adı: yalnızca harf, rakam ve _ kullanın (alt klasör için /).");
+        exit(1);
+    }
+
+    return $name;
+}
+
+/** "Admin/Panel" -> [ "Admin", "Panel" ] (isim alanı soneki, sınıf adı) */
+function splitName(string $name): array
+{
+    $parts = explode('/', $name);
+    $class = ucfirst(array_pop($parts));
+
+    return [array_map('ucfirst', $parts), $class];
+}
+
+function writeStub(string $directory, array $subDirs, string $class, string $contents, string $label): void
+{
+    $dir = $directory . ($subDirs ? '/' . implode('/', $subDirs) : '');
+    $file = $dir . '/' . $class . '.php';
+
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    if (file_exists($file)) {
+        warning("{$class} zaten mevcut.");
+        exit(0);
+    }
+
+    file_put_contents($file, $contents);
+    success("{$label} başarıyla oluşturuldu.");
+    echo "  File: {$file}" . PHP_EOL . PHP_EOL;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Banner
+|--------------------------------------------------------------------------
+*/
+function showBanner() {
+    global $ORANGE, $RESET, $GRAY;
+    echo PHP_EOL;
+    echo "{$ORANGE}███╗   ███╗ █████╗ ██████╗ ██╗  ██╗██╗   ██╗██╗   ██╗ ██████╗ {$RESET}" . PHP_EOL;
+    echo "{$ORANGE}████╗ ████║██╔══██╗██╔══██╗██║ ██╔╝██║   ██║██║   ██║██╔═══██╗{$RESET}" . PHP_EOL;
+    echo "{$ORANGE}██╔████╔██║███████║██████╔╝█████╔╝ ██║   ██║██║   ██║██║   ██║{$RESET}" . PHP_EOL;
+    echo "{$ORANGE}██║╚██╔╝██║██╔══██║██╔══██╗██╔═██╗ ██║   ██║╚██╗ ██╔╝██║   ██║{$RESET}" . PHP_EOL;
+    echo "{$ORANGE}██║ ╚═╝ ██║██║  ██║██║  ██║██║  ██╗╚██████╔╝ ╚████╔╝ ╚██████╔╝{$RESET}" . PHP_EOL;
+    echo "╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═══╝   ╚═════╝ {$RESET}" . PHP_EOL;
+    echo PHP_EOL;
+    echo "  {$GRAY}Markuvo Framework CLI{$RESET}" . PHP_EOL;
+    echo "  {$GRAY}Version 3.0.0{$RESET}" . PHP_EOL;
+    echo PHP_EOL;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Yardım
+|--------------------------------------------------------------------------
+*/
+function showHelp() {
+    global $BOLD, $CYAN, $GRAY, $RESET;
+    showBanner();
+    echo "{$BOLD}Kullanım:{$RESET}" . PHP_EOL;
+    echo "  php markuvo {$GRAY}<komut> [argüman] [--secenek=deger]{$RESET}" . PHP_EOL . PHP_EOL;
+    echo "{$BOLD}Komutlar{$RESET}" . PHP_EOL;
+    line();
+    echo "{$CYAN}Sunucu{$RESET}" . PHP_EOL;
+    echo "  serve [port]                   Geliştirme sunucusunu başlatır (varsayılan 8000)" . PHP_EOL . PHP_EOL;
+    echo "{$CYAN}Veritabanı{$RESET}" . PHP_EOL;
+    echo "  migrate                        Bekleyen migration'ları çalıştırır" . PHP_EOL;
+    echo "  migrate:rollback [--step=1]    Son migration grubunu geri alır" . PHP_EOL;
+    echo "  migrate:reset                  Tüm migration'ları geri alır" . PHP_EOL;
+    echo "  migrate:status                 Migration durumlarını listeler" . PHP_EOL;
+    echo "  db:seed [--class=Sinif]        Seeder çalıştırır (varsayılan DatabaseSeeder)" . PHP_EOL . PHP_EOL;
+    echo "{$CYAN}Oluşturucular{$RESET}" . PHP_EOL;
+    echo "  make:controller <ad>           Controller sınıfı" . PHP_EOL;
+    echo "  make:model <ad> [--migration]  Model (isterse migration ile birlikte)" . PHP_EOL;
+    echo "  make:migration <ad>            Migration (create_x_table -> tablo iskeleti hazır gelir)" . PHP_EOL;
+    echo "  make:seeder <ad>               Seeder sınıfı" . PHP_EOL;
+    echo "  make:middleware <ad>           Middleware sınıfı" . PHP_EOL . PHP_EOL;
+    echo "{$CYAN}Diğer{$RESET}" . PHP_EOL;
+    echo "  route:list                     Kayıtlı rotalar" . PHP_EOL;
+    echo "  cache:clear                    Önbellek ve derlenmiş görünümleri temizler" . PHP_EOL;
+    echo "  test [filtre]                  Testleri çalıştırır" . PHP_EOL;
+    echo "  about                          Çerçeve bilgisi" . PHP_EOL . PHP_EOL;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Serve
+|--------------------------------------------------------------------------
+*/
+function serve($port = '8000') {
+    global $GREEN, $YELLOW, $RESET, $CYAN;
+    if (!is_numeric($port) || $port < 1 || $port > 65535) { errorMessage("Geçersiz port: {$port}"); exit(1); }
+    $port = (int) $port;
+    $url = "http://127.0.0.1:{$port}";
+
+    echo PHP_EOL;
+    echo "{$CYAN}Markuvo Development Server{$RESET}" . PHP_EOL;
+    line();
+    echo "  Local:    {$GREEN}{$url}{$RESET}" . PHP_EOL;
+    echo "  Document: {$GREEN}" . __DIR__ . "/public{$RESET}" . PHP_EOL;
+    line();
+    echo "{$YELLOW}Sunucu arka planda başlatılıyor...{$RESET}" . PHP_EOL;
+    echo "{$GREEN}Terminal özgür! Sunucuyu kapatmadan komut yazmaya devam edebilirsiniz.{$RESET}" . PHP_EOL . PHP_EOL;
+
+    if (PHP_OS_FAMILY === 'Darwin') { exec('open ' . escapeshellarg($url)); }
+    exec('php -S 127.0.0.1:' . $port . ' -t ' . escapeshellarg(__DIR__ . '/public') . ' > /dev/null 2>&1 &');
+}
+
+/*
+|--------------------------------------------------------------------------
+| Oluşturucular
+|--------------------------------------------------------------------------
+*/
+function makeController($argument) {
+    [$sub, $class] = splitName(safeName($argument, 'Controller'));
+    $class = str_ends_with($class, 'Controller') ? $class : $class . 'Controller';
+    $ns = 'App\\Controllers' . ($sub ? '\\' . implode('\\', $sub) : '');
+
+    $template = "<?php\n\nnamespace {$ns};\n\nuse Core\\Controller;\nuse Core\\System\\Request;\n\nclass {$class} extends Controller\n{\n    public function index(Request \$request)\n    {\n        return \$this->view('home');\n    }\n}\n";
+    writeStub(__DIR__ . '/app/Controllers', $sub, $class, $template, 'Controller');
+}
+
+function makeModel($argument, $withMigration = false) {
+    [$sub, $class] = splitName(safeName($argument, 'Model'));
+    $ns = 'App\\Models' . ($sub ? '\\' . implode('\\', $sub) : '');
+    $table = \Core\Support\Str::plural(\Core\Support\Str::snake($class));
+
+    $template = "<?php\n\nnamespace {$ns};\n\nuse Core\\Model;\n\nclass {$class} extends Model\n{\n    // Tablo adı sınıf adından türetilir: {$table}\n    // protected \$table = '{$table}';\n\n    // Toplu atamaya (create/fill) açık alanlar:\n    protected \$fillable = [];\n}\n";
+    writeStub(__DIR__ . '/app/Models', $sub, $class, $template, 'Model');
+    echo "  Table: {$table}" . PHP_EOL . PHP_EOL;
+
+    if ($withMigration) {
+        makeMigration('create_' . $table . '_table');
+    }
+}
+
+function makeMigration($argument) {
+    $argument = safeName(str_replace('-', '_', (string) $argument), 'Migration');
+    $directory = __DIR__ . '/database/migrations';
+    if (!is_dir($directory)) { mkdir($directory, 0755, true); }
+
+    $safeName = strtolower(preg_replace('/[^a-zA-Z0-9_]+/', '_', $argument));
+    $timestamp = date('YmdHis');
+    $filePath = $directory . '/' . $timestamp . '_' . $safeName . '.php';
+    $className = \Core\Support\Str::studly($safeName);
+
+    if (preg_match('/^create_(\w+)_table$/', $safeName, $m)) {
+        $table = $m[1];
+        $up = "        Schema::create('{$table}', function (Blueprint \$table) {\n            \$table->id();\n            //\n            \$table->timestamps();\n        });";
+        $down = "        Schema::dropIfExists('{$table}');";
+    } else {
+        $up = "        //";
+        $down = "        //";
+    }
+
+    $template = "<?php\n\nuse Core\\Database\\Schema;\nuse Core\\Database\\Schema\\Blueprint;\n\nclass {$className}\n{\n    public function up()\n    {\n{$up}\n    }\n\n    public function down()\n    {\n{$down}\n    }\n}\n";
+    file_put_contents($filePath, $template);
+    success('Migration başarıyla oluşturuldu.');
+    echo "  File: {$filePath}" . PHP_EOL . PHP_EOL;
+}
+
+function makeSeeder($argument) {
+    [$sub, $class] = splitName(safeName($argument, 'Seeder'));
+    $class = str_ends_with($class, 'Seeder') ? $class : $class . 'Seeder';
+
+    $template = "<?php\n\nnamespace Database\\Seeders;\n\nuse Core\\Database\\Seeder;\n\nclass {$class} extends Seeder\n{\n    public function run()\n    {\n        // Örnek veri kodları buraya (tekrar çalıştırmaya dayanıklı yazın)\n    }\n}\n";
+    writeStub(__DIR__ . '/database/seeders', [], $class, $template, 'Seeder');
+}
+
+function makeMiddleware($argument) {
+    [$sub, $class] = splitName(safeName($argument, 'Middleware'));
+    $class = str_ends_with($class, 'Middleware') ? $class : $class . 'Middleware';
+
+    $template = "<?php\n\nnamespace App\\Middleware;\n\nuse Closure;\nuse Core\\System\\Request;\n\nclass {$class}\n{\n    public function handle(Request \$request, Closure \$next, ...\$args)\n    {\n        // İsteği geçirmeden önce kontrol edin; geçirmek için:\n        return \$next(\$request);\n    }\n}\n";
+    writeStub(__DIR__ . '/app/Middleware', [], $class, $template, 'Middleware');
+}
+
+/*
+|--------------------------------------------------------------------------
+| Migration & Seed
+|--------------------------------------------------------------------------
+*/
+function migrator(): Migrator {
+    bootApp();
+
+    return new Migrator(__DIR__ . '/database/migrations');
+}
+
+function runDb(callable $fn) {
+    try {
+        return $fn();
+    } catch (\Throwable $e) {
+        errorMessage('Veritabanı işlemi başarısız: ' . $e->getMessage());
+        echo "  İpucu: .env içindeki DB_* ayarlarını kontrol edin (SQLite için DB_CONNECTION=sqlite)." . PHP_EOL . PHP_EOL;
+        exit(1);
+    }
+}
+
+function migrate() {
+    echo PHP_EOL;
+    $ran = runDb(fn() => migrator()->run());
+    if ($ran === []) { info('Çalıştırılacak yeni migration yok.'); echo PHP_EOL; return; }
+    foreach ($ran as $name) { success("Migrated: {$name}"); }
+    echo PHP_EOL;
+}
+
+function migrateRollback($step) {
+    echo PHP_EOL;
+    $rolled = runDb(fn() => migrator()->rollback(max(1, (int) $step)));
+    if ($rolled === []) { info('Geri alınacak migration yok.'); echo PHP_EOL; return; }
+    foreach ($rolled as $name) { success("Rolled back: {$name}"); }
+    echo PHP_EOL;
+}
+
+function migrateReset() {
+    echo PHP_EOL;
+    $rolled = runDb(fn() => migrator()->reset());
+    if ($rolled === []) { info('Geri alınacak migration yok.'); echo PHP_EOL; return; }
+    foreach ($rolled as $name) { success("Rolled back: {$name}"); }
+    echo PHP_EOL;
+}
+
+function migrateStatus() {
+    echo PHP_EOL . str_pad('DURUM', 10) . str_pad('GRUP', 7) . "MIGRATION" . PHP_EOL;
+    line();
+    foreach (runDb(fn() => migrator()->status()) as $row) {
+        $state = $row['ran'] ? 'Çalıştı' : 'Bekliyor';
+        echo $state . str_repeat(' ', 10 - mb_strlen($state)) . str_pad((string) ($row['batch'] ?? '-'), 7) . $row['migration'] . PHP_EOL;
+    }
+    echo PHP_EOL;
+}
+
+function dbSeed($class) {
+    bootApp();
+    $class = $class === true || $class === null ? 'DatabaseSeeder' : (string) $class;
+    if (!preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $class)) { errorMessage('Geçersiz seeder adı.'); exit(1); }
+    $fqcn = 'Database\\Seeders\\' . $class;
+
+    if (!class_exists($fqcn)) { errorMessage("Seeder bulunamadı: {$fqcn}"); exit(1); }
+    echo PHP_EOL;
+    runDb(function () use ($fqcn) { (new $fqcn())->run(); });
+    success("Seed tamamlandı: {$class}");
+    echo PHP_EOL;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Rota listesi
+|--------------------------------------------------------------------------
+*/
+function routeList() {
+    global $BOLD, $CYAN, $GRAY, $RESET;
+    $routeFile = __DIR__ . '/routes/web.php';
+    if (!file_exists($routeFile)) { errorMessage('routes/web.php bulunamadı.'); exit(1); }
+
+    bootApp();
+    require $routeFile;
+    $routes = Router::getRoutes();
+
+    echo PHP_EOL . "{$BOLD}{$CYAN}Markuvo Routes{$RESET}" . PHP_EOL . PHP_EOL;
+    if (!$routes) { warning('Tanımlı route bulunamadı.'); echo PHP_EOL; return; }
+
+    echo str_pad('METHOD', 18) . str_pad('URI', 28) . str_pad('NAME', 14) . 'ACTION  [MIDDLEWARE]' . PHP_EOL;
+    line('─', 90);
+    foreach ($routes as $route) {
+        $a = $route->action;
+        if ($a instanceof Closure) { $action = 'Closure'; }
+        elseif (is_array($a)) { $action = (is_object($a[0]) ? get_class($a[0]) : $a[0]) . '@' . $a[1]; }
+        else { $action = (string) $a; }
+        $methods = implode('|', array_diff($route->methods, ['HEAD']));
+        echo str_pad($methods, 18) . str_pad($route->uri, 28) . str_pad((string) $route->name, 14) . $action
+            . ($route->middleware ? "  {$GRAY}[" . implode(', ', $route->middleware) . "]{$RESET}" : '') . PHP_EOL;
+    }
+    line('─', 90);
+    echo "{$GRAY}" . count($routes) . " route bulundu.{$RESET}" . PHP_EOL . PHP_EOL;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Önbellek temizleme (yalnızca .cache / derlenmiş görünüm dosyaları; .gitkeep dokunulmaz)
+|--------------------------------------------------------------------------
+*/
+function cacheClear() {
+    $directories = [__DIR__ . '/storage/cache/data', __DIR__ . '/storage/cache/views'];
+    $deleted = 0;
+    echo PHP_EOL . 'Markuvo Cache Clear' . PHP_EOL;
+    line();
+
+    foreach ($directories as $directory) {
+        if (!is_dir($directory)) continue;
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) {
+            if ($file->isFile() && $file->getFilename() !== '.gitkeep' && @unlink($file->getPathname())) { $deleted++; }
+        }
+    }
+    success('Cache temizleme tamamlandı.');
+    echo "  {$deleted} dosya temizlendi." . PHP_EOL . PHP_EOL;
+}
+
+function runTests($filter) {
+    $cmd = 'php ' . escapeshellarg(__DIR__ . '/tests/runner.php') . ($filter ? ' ' . escapeshellarg($filter) : '');
+    passthru($cmd, $code);
+    exit($code);
+}
+
+function about() {
+    global $ORANGE, $RESET;
+    showBanner();
+    echo "Framework : {$ORANGE}Markuvo Framework{$RESET}" . PHP_EOL;
+    echo "Version   : {$ORANGE}3.0.0{$RESET}" . PHP_EOL;
+    echo "PHP       : " . PHP_VERSION . PHP_EOL;
+    echo "PDO       : " . implode(', ', PDO::getAvailableDrivers()) . PHP_EOL . PHP_EOL;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Yönlendirici
+|--------------------------------------------------------------------------
+*/
+switch ($command) {
+    case 'serve': case 'server':     serve($argument ?? '8000'); break;
+    case 'make:controller':          makeController($argument); break;
+    case 'make:model':               makeModel($argument, isset($options['migration']) || isset($options['m'])); break;
+    case 'make:migration':           makeMigration($argument); break;
+    case 'make:seeder':              makeSeeder($argument); break;
+    case 'make:middleware':          makeMiddleware($argument); break;
+    case 'migrate':                  migrate(); break;
+    case 'migrate:rollback':         migrateRollback($options['step'] ?? 1); break;
+    case 'migrate:reset':            migrateReset(); break;
+    case 'migrate:status':           migrateStatus(); break;
+    case 'db:seed':                  dbSeed($options['class'] ?? null); break;
+    case 'route:list':               routeList(); break;
+    case 'cache:clear':              cacheClear(); break;
+    case 'test':                     runTests($argument); break;
+    case 'about':                    about(); break;
+    case 'help': case '--help': case '-h':
+    default:
+        showHelp();
+        break;
+}
+
+exit(0);

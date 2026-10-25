@@ -1,0 +1,16 @@
+<IfModule mod_negotiation.c>
+    Options -MultiViews -Indexes
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # RewriteBase bilerek tanımlanmadı. Apache klasör yolunu kendisi bulur;
+    # böylece proje localhost altında alt klasörde, sanal host'ta (DocumentRoot = public)
+    # ya da canlı sunucuda hiçbir ayar değiştirmeden çalışır.
+
+    # İstek gerçek bir dosya veya klasör değilse index.php'ye yönlendir
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>

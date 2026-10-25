@@ -1,0 +1,3 @@
+[2026-10-25 00:00:28] app.ERROR: Error: Undefined constant "welcome" in /Applications/XAMPP/xamppfiles/htdocs/dashboard/markuvo-framework/storage/cache/views/44a56513eb772c4507edf275d96aa9e364b9fb96.php:108
+[2026-10-25 00:00:29] app.ERROR: Error: Undefined constant "welcome" in /Applications/XAMPP/xamppfiles/htdocs/dashboard/markuvo-framework/storage/cache/views/44a56513eb772c4507edf275d96aa9e364b9fb96.php:108
+[2026-10-25 00:00:40] app.ERROR: Error: Undefined constant "welcome" in /Applications/XAMPP/xamppfiles/htdocs/dashboard/markuvo-framework/storage/cache/views/44a56513eb772c4507edf275d96aa9e364b9fb96.php:108
